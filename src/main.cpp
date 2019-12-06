@@ -2,31 +2,34 @@
 #include <Adafruit_NeoPixel.h>  // Light control
 #include <aREST.h>              // Rest interface
 #include <FreeRTOS.h>
+#include <freertos/semphr.h>
 
-#ifdef __AVR__
- #include <avr/power.h> // Required for 16 MHz Adafruit Trinket
-#endif
+// Lighting string info
+#define LED_PIN     13
+#define LED_COUNT   30
 
+// WiFi parameters
+#define ssid "GodBlessAmerica"
+#define password "Ray3Tasha5Devin5Kierra6"
+
+// Threads
+void network();
+void lighting();
+
+// API functions
+int setLedColorScheme(String command);
+
+// Color change functions
 void colorWipe(uint32_t color, int wait);
 void theaterChase(uint32_t color, int wait);
 void rainbow(int wait);
 void theaterChaseRainbow(int wait);
 void colorSet(uint32_t color);
 
-void network();
-void lighting();
-
-void setLEDColor();
-
-// Lighting string info
-#define LED_PIN     13
-#define LED_COUNT   30
-
+// Global state variable
 uint8_t ledState = 0;
 
-// WiFi parameters
-const char* ssid = "GodBlessAmerica";
-const char* password = "Ray3Tasha5Devin5Kierra6";
+SemaphoreHandle_t sem = xSemaphoreCreateMutex();
 
 TaskHandle_t taskLighting;
 TaskHandle_t taskNetwork;
@@ -35,7 +38,11 @@ TaskHandle_t taskNetwork;
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 void setup() {
-    
+    // Initialize Serial Interface
+    Serial.begin(115200);
+    Serial.println("Initialization start");
+
+    // Create tasks
     xTaskCreatePinnedToCore(
         lighting,       // Function to implement the task
         "lighting",     // Name of the task
@@ -53,47 +60,109 @@ void setup() {
         0,              // Priority of the task
         &taskNetwork,   // Task handle.
         1);             // Core where the task should run
-     
-    // initialize lighting
-    strip.begin();
-    strip.show();
-    strip.setBrightness(255);   // Max Brightness == 255
+    
+    Serial.println("Tasks Created");
+
 }
 
 void network(void* parameter) {
 
-    Serial.print("Task1 running on core ");
+    Serial.print("Network Task running on core ");
     Serial.println(xPortGetCoreID());
     
     // Create aREST instance
     aREST rest = aREST();
-
+    
+    // Set up Rest interface
+    rest.function("setLEDColorScheme", setLedColorScheme);
+    rest.set_id("1");
+    rest.set_name("esp32");
+    
     // Server Object
     WiFiServer server(80);
 
-    
-    // Function to be exposed
-    rest.function("setLED", setLedColor);
+    // Connect to WiFi
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+    }
+    Serial.println("WiFi connected");
+
+    // Start the server
+    server.begin();
+    Serial.print("Server started at ");
+    Serial.println(WiFi.localIP());
 
     while (true) {
 
+        // Handle REST calls
+        WiFiClient client = server.available();
+        if (!client) {
+            return;
+            
+        }
+        while(!client.available()){
+            delay(1);
+        }
+        rest.handle(client);
     }
 }
 
 void lighting(void* parameter) {
 
-    while (true) {
+    Serial.print("Lighting Task running on core ");
+    Serial.println(xPortGetCoreID());
 
+    // initialize lighting
+    strip.begin();
+    strip.show();
+    strip.setBrightness(50);   // Max Brightness == 255
+    
+    uint8_t lastState = 0;
+
+    while (true) {
+        if (ledState != lastState) {
+            lastState = ledState;
+            switch (ledState) {
+                case 0:
+                    colorWipe(strip.Color(  0,   0,   0), 50); // black
+                    break;
+                case 1:
+                    colorWipe(strip.Color(255,   0,   0), 50); // Red
+                    break;
+                case 2:
+                    colorWipe(strip.Color(  0, 255,   0), 50); // Green
+                    break;
+                case 3:
+                    colorWipe(strip.Color(  0,   0, 255), 50); // Blue
+                    break;
+                case 4:
+                    colorWipe(strip.Color(255, 255, 255), 50); // white
+                    break;
+                default:
+                    colorWipe(strip.Color(255, 255,   0), 50); // Yellow
+                    break;
+            }
+        }
     }
-    colorWipe(strip.Color(255,   0,   0), 50); // Red
-    colorWipe(strip.Color(  0, 255,   0), 50); // Green
-    colorWipe(strip.Color(  0,   0, 255), 50); // Blue
 }
 
-void loop() {
-    // theaterChase(strip.Color(127, 127, 127), 50); // White, half brightness
-    // theaterChase(strip.Color(127,   0,   0), 50); // Red, half brightness
-    // theaterChase(strip.Color(  0,   0, 127), 50); // Blue, half brightness
+// Not used
+void loop() {}
+
+// REST-Accessible functions
+int setLedColorScheme(String command) {
+    if( xSemaphoreTake( sem, ( TickType_t ) 100 ) == pdTRUE ) {
+        ledState = command.toInt();
+        xSemaphoreGive(sem);
+        return 0;
+    }
+    return 1;
+}
+
+// Other functions
+void errorAlert(String message) {
+    return; //TODO
 }
 
 
