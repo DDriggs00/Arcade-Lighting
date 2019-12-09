@@ -13,8 +13,8 @@
 #define password "Ray3Tasha5Devin5Kierra6"
 
 // Threads
-void network();
-void lighting();
+void network(void* pvParameter);
+void lighting(void* pvParameter);
 
 // API functions
 int setLedColorScheme(String command);
@@ -39,7 +39,7 @@ Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 void setup() {
     // Initialize Serial Interface
-    Serial.begin(115200);
+    Serial.begin(9600);
     Serial.println("Initialization start");
 
     // Create tasks
@@ -48,7 +48,7 @@ void setup() {
         "lighting",     // Name of the task
         10000,          // Stack size in words
         NULL,           // Task input parameter
-        0,              // Priority of the task
+        2,              // Priority of the task
         &taskLighting,  // Task handle.
         0);             // Core where the task should run
 
@@ -57,7 +57,7 @@ void setup() {
         "network",      // Name of the task
         10000,          // Stack size in words
         NULL,           // Task input parameter
-        0,              // Priority of the task
+        2,              // Priority of the task
         &taskNetwork,   // Task handle.
         1);             // Core where the task should run
     
@@ -65,7 +65,7 @@ void setup() {
 
 }
 
-void network(void* parameter) {
+void network(void* pvParameter) {
 
     Serial.print("Network Task running on core ");
     Serial.println(xPortGetCoreID());
@@ -98,17 +98,16 @@ void network(void* parameter) {
         // Handle REST calls
         WiFiClient client = server.available();
         if (!client) {
-            return;
-            
+            continue;
         }
-        while(!client.available()){
+        while(!client.available()) {
             delay(1);
         }
         rest.handle(client);
     }
 }
 
-void lighting(void* parameter) {
+void lighting(void* pvParameter) {
 
     Serial.print("Lighting Task running on core ");
     Serial.println(xPortGetCoreID());
@@ -117,8 +116,10 @@ void lighting(void* parameter) {
     strip.begin();
     strip.show();
     strip.setBrightness(50);   // Max Brightness == 255
+
+    Serial.println("LED Strip initialized");
     
-    uint8_t lastState = 0;
+    uint8_t lastState = -1;
 
     while (true) {
         if (ledState != lastState) {
@@ -144,6 +145,7 @@ void lighting(void* parameter) {
                     break;
             }
         }
+        delay(1);
     }
 }
 
