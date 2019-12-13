@@ -9,10 +9,10 @@
 aREST rest = aREST();
 
 // WiFi parameters
-// #define ssid        "AirVandalRTOS"
-// #define password    "EmbeddedSystems!19"
-#define ssid        "ddriggs-pixel"
-#define password    "passworD1"
+#define ssid        "AirVandalRTOS"
+#define password    "EmbeddedSystems!19"
+// #define ssid        "ddriggs-pixel"
+// #define password    "passworD1"
 
 // Lighting string info
 #define LED_PIN     13
@@ -34,11 +34,14 @@ int setLedState(String command);
 int getLedState(String command);
 
 // Color change functions
+void doAnimation(int frameTime);
 void colorWipe(uint32_t color, int wait);
+void colorWipeAlt(uint32_t color1, uint32_t color2, uint8_t groupSize, int wait);
+void colorSet(uint32_t color);
+void colorSetAlt(uint32_t color1, uint32_t color2, uint8_t groupSize, uint8_t offset);
 void theaterChase(uint32_t color, int wait);
 void rainbow(int wait);
 void theaterChaseRainbow(int wait);
-void colorSet(uint32_t color);
 
 // Global state variable
 uint8_t ledState = 0;
@@ -132,12 +135,20 @@ void network(void* pvParameter) {
 
 void lighting(void* pvParameter) {
     Serial.printf("Started lighting tasks on core %i\n", xPortGetCoreID());
-
+    int frameTime = 1000;
     uint8_t lastState = -1;
     while (true) {
-        if (ledState != lastState) {
-            lastState = ledState;
-            switch (ledState) {
+        doAnimation(frameTime);
+
+        int temp = -1;
+        if( xSemaphoreTake( sem, ( TickType_t ) 100 ) == pdTRUE ) {
+            temp = ledState;
+            xSemaphoreGive(sem);
+        }
+
+        if (temp != lastState) {
+            lastState = temp;
+            switch (temp) {
                 case 0:
                     colorWipe(strip.Color(  0,   0,   0), 50); // black
                     break;
@@ -152,6 +163,9 @@ void lighting(void* pvParameter) {
                     break;
                 case 4:
                     colorWipe(strip.Color(255, 255, 255), 50); // white
+                    break;
+                case 5:
+                    colorWipeAlt(strip.Color(255, 0, 0), strip.Color(0, 255, 0), 3, 50); // red/green crawl
                     break;
                 default:
                     colorWipe(strip.Color(255, 255,   0), 50); // Yellow
@@ -183,6 +197,30 @@ int getLedState(String command) {
     return temp;
 }
 
+void doAnimation(int frametime) {
+    static unsigned long lastFrame = 0;
+    static uint8_t frame = 0;
+    
+    if (millis() - lastFrame < frametime) return;
+    lastFrame = millis();
+
+    int temp = -1;
+    if( xSemaphoreTake( sem, ( TickType_t ) 100 ) == pdTRUE ) {
+        temp = ledState;
+        xSemaphoreGive(sem);
+    }
+
+    switch (temp) {
+        case 5:
+            if (frame > 5) frame = 0;
+            colorSetAlt(strip.Color(255, 0, 0), strip.Color(0, 255, 0), 3, frame);
+            frame += 1;
+            break;
+        default:
+            break;
+    }
+}
+
 
 // Some functions of our own for creating animated effects -----------------
 
@@ -197,6 +235,27 @@ void colorWipe(uint32_t color, int wait) {
     }
 }
 
+// Same as colorWipe, but alternating between 2 colors
+void colorWipeAlt(uint32_t color1, uint32_t color2, uint8_t groupSize, int wait) {
+    uint8_t currentGroupSize = 0;
+    bool colorSelected = false;
+    for(int i=0; i<strip.numPixels(); i++) { // For each pixel in strip...
+        if (currentGroupSize >= groupSize) {
+            colorSelected = !colorSelected;
+            currentGroupSize = 0;
+        }
+        if (colorSelected) {
+            strip.setPixelColor(i, color2);
+        }
+        else {
+            strip.setPixelColor(i, color1);
+        }
+        currentGroupSize += 1;
+        strip.show();
+        delay(wait);                           //  Pause for a moment
+    }
+}
+
 // Seets the entire strand to the given color
 // Args: Color
 void colorSet(uint32_t color) {
@@ -206,6 +265,30 @@ void colorSet(uint32_t color) {
     portDISABLE_INTERRUPTS(); 
     strip.show();
     portENABLE_INTERRUPTS();
+}
+
+// sets strip to anternating between color1 and color2 in groups on groupSize, rotate-shifted to the right by offset
+void colorSetAlt(uint32_t color1, uint32_t color2, uint8_t groupSize, uint8_t offset) {
+    uint8_t currentGroupSize = (offset % (2*groupSize));
+    bool colorSelected = false;
+    if (currentGroupSize >= groupSize) {
+        colorSelected = !colorSelected;
+        currentGroupSize -= groupSize;
+    }
+    for(int i=0; i<strip.numPixels(); i++) { // For each pixel in strip...
+        if (currentGroupSize >= groupSize) {
+            colorSelected = !colorSelected;
+            currentGroupSize = 0;
+        }
+        if (colorSelected) {
+            strip.setPixelColor(i, color2);
+        }
+        else {
+            strip.setPixelColor(i, color1);
+        }
+        currentGroupSize += 1;
+    }
+    strip.show();
 }
 
 // Theater-marquee-style chasing lights. Pass in a color (32-bit value,
