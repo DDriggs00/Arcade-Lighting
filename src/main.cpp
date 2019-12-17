@@ -1,5 +1,6 @@
 // Import required libraries
 #include <WiFi.h>
+#include <ctype.h>
 #include <aREST.h>
 #include <FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -9,10 +10,10 @@
 aREST rest = aREST();
 
 // WiFi parameters
-#define ssid        "AirVandalRTOS"
-#define password    "EmbeddedSystems!19"
-// #define ssid        "ddriggs-pixel"
-// #define password    "passworD1"
+// #define ssid        "AirVandalRTOS"
+// #define password    "EmbeddedSystems!19"
+#define ssid        "ddriggs-pixel"
+#define password    "passworD1"
 
 // Lighting string info
 #define LED_PIN     13
@@ -51,6 +52,18 @@ SemaphoreHandle_t sem = xSemaphoreCreateMutex();
 
 // LED Object
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+typedef enum games {
+    pacman      = 20,
+    digdug      = 21,
+    mario       = 22,
+    dk          = 23,
+    dkjr        = 24,
+    bubblebobble= 25,
+    snowbros    = 26,
+    frogger     = 27,
+    mspacman    = 28
+} games;
 
 void setup()
 {
@@ -161,14 +174,28 @@ void lighting(void* pvParameter) {
                 case 3:
                     colorWipe(strip.Color(  0,   0, 255), 50); // Blue
                     break;
-                case 4:
-                    colorWipe(strip.Color(255, 255, 255), 50); // white
+                case 4: //Christmas
+                    colorWipeAlt(strip.Color(255, 0, 0), strip.Color(0, 255, 0), 6, 50); // red/green crawl
+                    frameTime = 500;
                     break;
-                case 5:
-                    colorWipeAlt(strip.Color(255, 0, 0), strip.Color(0, 255, 0), 3, 50); // red/green crawl
+                case games::bubblebobble:
+                    colorWipeAlt(strip.Color(0, 0, 255), strip.Color(0, 255, 0), LED_COUNT/2, 50); // blue/green
+                    break;
+                case games::mario:
+                    colorWipeAlt(strip.Color(255, 0, 0), strip.Color(0, 255, 0), LED_COUNT/2, 50); // Red/green
+                    break;
+                case games::digdug:
+                    colorWipeAlt(strip.Color(0, 0, 255), strip.Color(255, 165, 0), 6, 50); // Blue/orange crawl
+                    break;
+                case games::mspacman:
+                case games::pacman:
+                    colorWipe(strip.Color(255, 255,   0), 50); // Yellow
+                    break;
+                case games::dkjr: // Donkey kong junior
+                    colorWipe(strip.Color(34, 139,  34), 50); // forest green
                     break;
                 default:
-                    colorWipe(strip.Color(255, 255,   0), 50); // Yellow
+                    colorWipe(strip.Color(255, 255,   255), 50); // white
                     break;
             }
         }
@@ -177,10 +204,21 @@ void lighting(void* pvParameter) {
 }
 
 // Custom function accessible by the API
-int setLedState(String command) {
+int setLedState(String gameId) {
+    int stateTemp;
+    if (gameId.equalsIgnoreCase("pacman")) stateTemp = games::pacman;
+    else if (gameId.equalsIgnoreCase("digdug")) stateTemp = games::digdug;
+    else if (gameId.equalsIgnoreCase("bubblebobble")) stateTemp = games::bubblebobble;
+    else if (gameId.equalsIgnoreCase("mario")) stateTemp = games::mario;
+    else if (gameId.equalsIgnoreCase("donkeykong")) stateTemp = games::dk;
+    else if (gameId.equalsIgnoreCase("dkjr")) stateTemp = games::dkjr;
+    else if (gameId.equalsIgnoreCase("donkeykongjr")) stateTemp = games::dkjr;
+    else if (gameId.equalsIgnoreCase("christmas")) stateTemp = 4;
+    else stateTemp = gameId.toInt();
 
+    // Set the global variable atomically
     if( xSemaphoreTake( sem, ( TickType_t ) 100 ) == pdTRUE ) {
-        ledState = command.toInt();
+        ledState = stateTemp;
         xSemaphoreGive(sem);
         return 0;
     }
@@ -211,9 +249,9 @@ void doAnimation(int frametime) {
     }
 
     switch (temp) {
-        case 5:
-            if (frame > 5) frame = 0;
-            colorSetAlt(strip.Color(255, 0, 0), strip.Color(0, 255, 0), 3, frame);
+        case 4:
+            if (frame > 11) frame = 0;
+            colorSetAlt(strip.Color(255, 0, 0), strip.Color(0, 255, 0), 6, frame);
             frame += 1;
             break;
         default:
